@@ -1,61 +1,119 @@
 #include <Arduino.h>
-#define RX_PIN 2 // 수신 핀 (rx)
-#define TX_PIN 3 // 송신 핀 (tx)
-
+#define RX_PIN 14 // 수신 핀 (rx)
+#define TX_PIN 12 // 송신 핀 (tx)
 #include <SoftwareSerial.h>
 
 SoftwareSerial mySerial(RX_PIN, TX_PIN); // SoftwareSerial 객체 생성
 
+
 void setup() {
-  Serial.begin(9600); // 시리얼 통신 초기화
-  mySerial.begin(9600); // SoftwareSerial 통신 초기화
+  Serial.begin(115200); // 시리얼 통신 초기화
+  mySerial.begin(115200); // SoftwareSerial 통신 초기화
+  // mySerial.write(0x64);
+  // mySerial.write(0x64);
+
 }
 
 void loop() {
   if (mySerial.available()) {
+    // Serial.write(mySerial.read());
+    // byte buffer[1];
+    // mySerial.readBytes(buffer, 1);
+    // Serial.println(buffer[0]);
+    // delay(1000);
+    
     byte buffer[11];
     mySerial.readBytes(buffer, 11); // 데이터 읽기
+    if(buffer[0]==0x55){
 
-    byte axL = buffer[2];
-    byte axH = buffer[3];
-    byte ayL = buffer[4];
-    byte ayH = buffer[5];
-    byte azL = buffer[6];
-    byte azH = buffer[7];
-    byte TL = buffer[8];
-    byte TH = buffer[9];
-    byte sum = buffer[10];
 
-    // 계산 공식 적용
-    int Ax = (axH << 8) | axL;
-    int Ay = (ayH << 8) | ayL;
-    int Az = (azH << 8) | azL;
+      if(buffer[1]==0x51){
+        for (int i = 0; i < 11; i++) {
+          Serial.print(buffer[i]);
+          Serial.print(" ");
+        }
+        Serial.println("");
 
-    // 온도 계산 공식 적용
-    float temperature = ((TH << 8) | TL) / 340.0 + 36.53;
+        byte axL = buffer[2];
+        byte axH = buffer[3];
+        byte ayL = buffer[4];
+        byte ayH = buffer[5];
+        byte azL = buffer[6];
+        byte azH = buffer[7];
+        byte TL = buffer[8];
+        byte TH = buffer[9];
+        byte sum = buffer[10];
 
-    // Checksum 검증
-    byte calculatedSum = 0;
-    for (int i = 0; i < 10; i++) {
-      calculatedSum += buffer[i];
+        byte calculatedSum = 0;
+        for (int i = 0; i < 10; i++) {
+          calculatedSum += buffer[i];
+        }
+        if (calculatedSum == sum) {
+          float Ax = ((axH << 8) | axL)/32768.0*16*9.8;
+          float Ay = ((ayH << 8) | ayL)/32768.0*16*9.8;
+          float Az = ((azH << 8) | azL)/32768.0*16*9.8;
+
+          // // 온도 계산 공식 적용
+          Serial.print(((TH << 8) | TL) );
+          float temperature = ((TH << 8) | TL) / 340.0 + 36.53;
+          Serial.print("X-axis acceleration: ");
+          Serial.println(Ax);
+          Serial.print("Y-axis acceleration: ");
+          Serial.println(Ay);
+          Serial.print("Z-axis acceleration: ");
+          Serial.println(Az);
+          Serial.print("Temperature: ");
+          Serial.println(temperature);
+          
+        } else {
+          Serial.println("Checksum is invalid.");
+        }
+      }
+
     }
+    
+    // Serial.println(buffer[1]);
+    // Serial.println(buffer[0]);
+    // Serial.println(0x55);
 
-    // 시리얼 모니터에 결과 출력
-    Serial.print("X-axis acceleration: ");
-    Serial.println(Ax);
-    Serial.print("Y-axis acceleration: ");
-    Serial.println(Ay);
-    Serial.print("Z-axis acceleration: ");
-    Serial.println(Az);
-    Serial.print("Temperature: ");
-    Serial.println(temperature);
+    // if (buffer[1] ==0x51){
+    //   byte axL = buffer[2];
+    //   byte axH = buffer[3];
+    //   byte ayL = buffer[4];
+    //   byte ayH = buffer[5];
+    //   byte azL = buffer[6];
+    //   byte azH = buffer[7];
+    //   byte TL = buffer[8];
+    //   byte TH = buffer[9];
+    //   byte sum = buffer[10];
+      
+    //   // 계산 공식 적용
 
-    if (calculatedSum == sum) {
-      Serial.println("Checksum is valid.");
-    } else {
-      Serial.println("Checksum is invalid.");
-    }
-  }
+
+    //   // // Checksum 검증
+    //   byte calculatedSum = 0;
+    //   for (int i = 0; i < 10; i++) {
+    //     calculatedSum += buffer[i];
+    //   }
+    //   calculatedSum = calculatedSum+ 0x55 + 0x51; 
+
+    //   // 시리얼 모니터에 결과 출력
+    //   Serial.print("X-axis acceleration: ");
+    //   Serial.println(Ax);
+    //   Serial.print("Y-axis acceleration: ");
+    //   Serial.println(Ay);
+    //   Serial.print("Z-axis acceleration: ");
+    //   Serial.println(Az);
+    //   Serial.print("Temperature: ");
+    //   Serial.println(temperature);
+
+    //   if (calculatedSum == sum) {
+    //     Serial.println("Checksum is valid.");
+    //   } else {
+    //     Serial.println("Checksum is invalid.");
+    //   }
+    // }
+  } 
 }
 
 
