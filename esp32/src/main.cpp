@@ -5,6 +5,7 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <string>
+#include <ctime>
 
 using namespace std;
 
@@ -18,9 +19,9 @@ using namespace std;
 
 static volatile char s_cDataUpdate = 0, s_cCmd = 0xff; 
 
-const char* ssid = "1309";
-const char* password = "00000000";
-const char* mqtt_server = "192.168.155.230";
+const char* ssid = "DT_TUKOREA";
+const char* password = "DiK_WiMiS_30!";
+const char* mqtt_server = "10.101.21.198";
 
 const char* location = "2Campus";
 const char* subLocation = "MazeRunner";
@@ -31,6 +32,7 @@ const char* valueType[3] = {"X", "Y", "Z"};
 const char* value;
 char ch[3][10];
 const char* check = "1";
+string time_set;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -46,6 +48,7 @@ void callback(const char* topic, byte* payload, unsigned int length);
 void reconnect();
 int connect_first();
 string str(const char* rc);
+string timeset(char ch[3][10]);
 const uint32_t c_uiBaud[8] = {1200, 4800, 9600, 19200, 38400, 57600, 115200, 230400};
 
 void setup() {
@@ -95,13 +98,18 @@ void loop() {
 		if(s_cDataUpdate & ACC_UPDATE)
 		{
 			M5.Lcd.setCursor(5, 20);
-			M5.Lcd.printf("Acc  :%.2f  %.2f  %.2f", fAcc[0], fAcc[1], fAcc[2]);
+			M5.Lcd.printf("Acc  :%.2f  %.2f  %.2f\n", fAcc[0], fAcc[1], fAcc[2]);
 			for(int i = 0; i < 3; i++){
 				sprintf(ch[i], "%f", fAcc[i]);
 				printf("%s: %s\n", valueType[i], ch[i]);
-				value = str(valueType[i]).c_str();
-				client.publish(value, ch[i]);
+				// value = str(valueType[i]).c_str();
 			}
+			value = str(valueType[0]).c_str();
+			time_set = timeset(ch);
+			printf("value: %s\n", value);
+			printf("time_set: %s\n", time_set.c_str());
+			client.publish(value, time_set.c_str());
+			M5.Lcd.printf("Topic:%s\n", str(valueType[0]).c_str());
 			s_cDataUpdate &= ~ACC_UPDATE;
 		}
 		s_cDataUpdate = 0;
@@ -269,5 +277,19 @@ string str(const char* rc){
 	rcstr += String(sensorIndex).c_str();
 	rcstr += "/";
 	rcstr += rc;
+	return rcstr;
+}
+
+string timeset(char ch[3][10]){
+	time_t timer;
+	struct tm* t;
+	time(&timer);
+	t = localtime(&timer);
+	string rcstr = "";
+	rcstr += ch[0];
+	rcstr += "_";
+	rcstr += ch[1];
+	rcstr += "_";
+	rcstr += ch[2];
 	return rcstr;
 }
