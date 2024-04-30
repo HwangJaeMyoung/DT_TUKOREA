@@ -24,8 +24,8 @@ const char* password = "DiK_WiMiS_30!";
 const char* mqtt_server = "10.101.21.198";
 
 const char* location = "2Campus";
-const char* subLocation = "MazeRunner";
-const char* part = "DA";
+const char* subLocation = "SMTLINE";
+const char* part = "2";
 const char* sensorType = "Vibration";
 int sensorIndex = 1;
 const char* valueType[3] = {"X", "Y", "Z"};
