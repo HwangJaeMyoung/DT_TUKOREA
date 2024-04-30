@@ -237,7 +237,6 @@ void callback(const char* topic, byte* payload, unsigned int length) {
 
 void reconnect() {
   while (!client.connected()) {
-    String clientId = "1111";
     if (client.connect(clientId.c_str())) {
 		value = str("Register").c_str();
 		client.publish(value, check);
@@ -251,7 +250,6 @@ void reconnect() {
 
 int connect_first() {
 	int result = 0;
-	String clientId = "1";
 	if (client.connect(clientId.c_str())) {
 		value = str("Confirm").c_str();
 		client.subscribe(value, 1);
