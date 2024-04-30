@@ -33,7 +33,7 @@ const char* value;
 char ch[3][10];
 const char* check = "1";
 string time_set;
-
+String clientId = "ESP8266Client-" + String(random(0xffff), HEX);
 WiFiClient espClient;
 PubSubClient client(espClient);
 
