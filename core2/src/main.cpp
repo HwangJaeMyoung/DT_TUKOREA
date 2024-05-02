@@ -24,22 +24,21 @@ const char* password = "DiK_WiMiS_30!";
 const char* mqtt_server = "10.101.21.198";
 
 const char* location = "2Campus";
-// const char* subLocation = "MazeRunner";
 const char* subLocation = "SMTLINE";
 const char* part = "1";
 const char* sensorType = "Vibration";
 int sensorIndex = 1;
 const char* valueType[3] = {"X", "Y", "Z"};
 const char* value;
+const char* sensorValue = "Value";
 char ch[3][10];
 const char* check = "1";
-string time_set;
-String clientId = "ESP8266Client-" + String(random(0xffff), HEX);
+String time_set;
+String clientId = str(sensorValue) + String(random(0xffff), HEX);
 WiFiClient espClient;
 PubSubClient client(espClient);
 
 void CopeCmdData(unsigned char ucData);
-static void CmdProcess(void);
 static void AutoScanSensor(void);
 static void SensorUartSend(uint8_t *p_data, uint32_t uiSize);
 static void SensorDataUpdata(uint32_t uiReg, uint32_t uiRegNum);
@@ -48,8 +47,8 @@ void setup_wifi();
 void callback(const char* topic, byte* payload, unsigned int length);
 void reconnect();
 int connect_first();
-string str(const char* rc);
-string timeset(char ch[3][10]);
+String str(const char* rc);
+String timeset(char ch[3][10]);
 const uint32_t c_uiBaud[8] = {1200, 4800, 9600, 19200, 38400, 57600, 115200, 230400};
 
 void setup() {
@@ -103,14 +102,13 @@ void loop() {
 			for(int i = 0; i < 3; i++){
 				sprintf(ch[i], "%f", fAcc[i]);
 				printf("%s: %s\n", valueType[i], ch[i]);
-				// value = str(valueType[i]).c_str();
 			}
-			value = str(valueType[0]).c_str();
+			value = str(sensorValue).c_str();
 			time_set = timeset(ch);
 			printf("value: %s\n", value);
 			printf("time_set: %s\n", time_set.c_str());
 			client.publish(value, time_set.c_str());
-			M5.Lcd.printf("Topic:%s\n", str(valueType[0]).c_str());
+			M5.Lcd.printf("Topic:%s\n", str(sensorValue).c_str());
 			s_cDataUpdate &= ~ACC_UPDATE;
 		}
 		s_cDataUpdate = 0;
