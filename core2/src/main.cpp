@@ -52,35 +52,49 @@ String timeset(char ch[3][10]);
 const uint32_t c_uiBaud[8] = {1200, 4800, 9600, 19200, 38400, 57600, 115200, 230400};
 
 void setup() {
+  	// Serial(컴퓨터), Serial2(센서) 포트 열고 비트 수 설정
   	Serial.begin(115200);
   	Serial2.begin(115200, SERIAL_8N1, RX, TX);
+
+	// wifi 설정
 	setup_wifi();
+
+	// MQTT 서버 설정
 	client.setServer(mqtt_server, 1883);
 	client.setCallback(callback);
+
+	// Arduino 출력 설정
 	M5.begin();
     M5.Lcd.setRotation(3);
     M5.Lcd.fillScreen(BLACK);
     M5.Lcd.setTextSize(1);
     M5.Lcd.setCursor(5, 5);
     M5.Lcd.println("        X     Y     Z");
+
+	// 센서 설정 및 스캔(WT901CTTL 센서 참고)
 	WitInit(WIT_PROTOCOL_NORMAL, 0x50);
 	WitSerialWriteRegister(SensorUartSend);
 	WitRegisterCallBack(SensorDataUpdata);
   	WitDelayMsRegister(Delayms);
 	WitSetOutputRate(RRATE_200HZ);
 	AutoScanSensor();
-	if (connect_first() == 0){
+
+	// 센서 connect 시도
+	if (connect_first(clientId) == 0){
 		exit(1);
 	}
 }
 int i;
 float fAcc[3], fGyro[3], fAngle[3];
 void loop() {
+	// disconnect인 경우 reconnect 반복
 	if (!client.connected()) {
-		reconnect();
+		reconnect(clientId);
 	}
 	client.loop();
   	delay(1000);
+
+	// connect된 경우 Serial, Serial2의 포트가 있는지 확인
 	while (Serial2.available())
 	{
 		WitSerialDataIn(Serial2.read());
@@ -91,10 +105,13 @@ void loop() {
 	}
 	if(s_cDataUpdate)
 	{
+		// 센서로부터 Acc값 받아오기
 		for(i = 0; i < 3; i++)
 		{
 			fAcc[i] = sReg[AX+i] / 32768.0f * 16.0f;
 		}
+
+		// X, Y, Z값을 arduino 및 컴퓨터에 출력하여 값 확인하고 topic에 맞춰 MQTT 통신으로 전달
 		if(s_cDataUpdate & ACC_UPDATE)
 		{
 			M5.Lcd.setCursor(5, 20);
