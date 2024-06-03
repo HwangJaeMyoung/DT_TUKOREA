@@ -3,19 +3,19 @@
 #include <Arduino.h>
 #include <M5Core2.h>
 #include <WiFi.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
+#include <TimeLib.h>
 #include <PubSubClient.h>
 #include <string>
 #include <ctime>
+#include <ArduinoJson.h>
 
 using namespace std;
 
 #define RX 32
 #define TX 33
 #define ACC_UPDATE		0x01
-#define GYRO_UPDATE		0x02
-#define ANGLE_UPDATE	0x04
-#define MAG_UPDATE		0x08
-#define READ_UPDATE		0x80
 
 static volatile char s_cDataUpdate = 0, s_cCmd = 0xff; 
 
@@ -29,30 +29,40 @@ const char* part = "1";
 const char* sensorType = "Vibration";
 int sensorIndex = 1;
 const char* valueType[3] = {"X", "Y", "Z"};
-const char* value;
+const char* topic;
 const char* sensorValue = "Value";
 char ch[3][10];
 const char* check = "1";
 String time_set;
-String clientId = str(sensorValue) + String(random(0xffff), HEX);
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-void CopeCmdData(unsigned char ucData);
+// NTP 클라이언트 설정
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 32400, 60000); // UTC 기준, GMT+9 (한국 표준시) 설정
+
+unsigned long initialEpoch;
+unsigned long initialMillis;
+
+// JSON 데이터 생성
+DynamicJsonDocument doc(5000);
+JsonArray data = doc.createNestedArray("data");
+
 static void AutoScanSensor(void);
 static void SensorUartSend(uint8_t *p_data, uint32_t uiSize);
 static void SensorDataUpdata(uint32_t uiReg, uint32_t uiRegNum);
 static void Delayms(uint16_t ucMs);
 void setup_wifi();
-void callback(const char* topic, byte* payload, unsigned int length);
-void reconnect();
-int connect_first();
+void reconnect(String clientId);
+int connect_first(String clientId);
 String str(const char* rc);
-String timeset(char ch[3][10]);
 const uint32_t c_uiBaud[8] = {1200, 4800, 9600, 19200, 38400, 57600, 115200, 230400};
 
+String clientId = str(sensorValue) + String(random(0xffff), HEX);
+int cnt = 0;
+
 void setup() {
-  	// Serial(컴퓨터), Serial2(센서) 포트 열고 비트 수 설정
+	// Serial(컴퓨터), Serial2(센서) 포트 열고 비트 수 설정
   	Serial.begin(115200);
   	Serial2.begin(115200, SERIAL_8N1, RX, TX);
 
@@ -61,16 +71,8 @@ void setup() {
 
 	// MQTT 서버 설정
 	client.setServer(mqtt_server, 1883);
-	client.setCallback(callback);
-
-	// Arduino 출력 설정
-	M5.begin();
-    M5.Lcd.setRotation(3);
-    M5.Lcd.fillScreen(BLACK);
-    M5.Lcd.setTextSize(1);
-    M5.Lcd.setCursor(5, 5);
-    M5.Lcd.println("        X     Y     Z");
-
+	client.setBufferSize(5000);
+	
 	// 센서 설정 및 스캔(WT901CTTL 센서 참고)
 	WitInit(WIT_PROTOCOL_NORMAL, 0x50);
 	WitSerialWriteRegister(SensorUartSend);
@@ -83,76 +85,81 @@ void setup() {
 	if (connect_first(clientId) == 0){
 		exit(1);
 	}
+	
+	// NTPClient 시작
+	timeClient.begin();
+	timeClient.update();
+  
+	// 초기 에포크 시간과 밀리초 저장
+	initialEpoch = timeClient.getEpochTime();
+	initialMillis = millis();
+
+	cnt = 0;
+
+	M5.begin();
 }
 int i;
-float fAcc[3], fGyro[3], fAngle[3];
+float fAcc[3];
 void loop() {
 	// disconnect인 경우 reconnect 반복
 	if (!client.connected()) {
 		reconnect(clientId);
 	}
 	client.loop();
-  	delay(1000);
 
-	// connect된 경우 Serial, Serial2의 포트가 있는지 확인
+	// connect된 경우 센서 데이터를 arduino로 읽기
 	while (Serial2.available())
 	{
 		WitSerialDataIn(Serial2.read());
 	}
-	while (Serial.available()) 
+	// X, Y, Z값을 arduino 및 컴퓨터에 출력하여 값 확인하고 topic에 맞춰 MQTT 통신으로 전달
+	if(s_cDataUpdate & ACC_UPDATE)
 	{
-		CopeCmdData(Serial.read());
-	}
-	if(s_cDataUpdate)
-	{
-		// 센서로부터 Acc값 받아오기
-		for(i = 0; i < 3; i++)
-		{
-			fAcc[i] = sReg[AX+i] / 32768.0f * 16.0f;
+		for(int i = 0; i < 3; i++){
+			fAcc[i] = sReg[AX+i];
 		}
 
-		// X, Y, Z값을 arduino 및 컴퓨터에 출력하여 값 확인하고 topic에 맞춰 MQTT 통신으로 전달
-		if(s_cDataUpdate & ACC_UPDATE)
-		{
-			M5.Lcd.setCursor(5, 20);
-			M5.Lcd.printf("Acc  :%.2f  %.2f  %.2f\n", fAcc[0], fAcc[1], fAcc[2]);
-			for(int i = 0; i < 3; i++){
-				sprintf(ch[i], "%f", fAcc[i]);
-				printf("%s: %s\n", valueType[i], ch[i]);
-			}
-			value = str(sensorValue).c_str();
-			time_set = timeset(ch);
-			printf("value: %s\n", value);
-			printf("time_set: %s\n", time_set.c_str());
-			client.publish(value, time_set.c_str());
-			M5.Lcd.printf("Topic:%s\n", str(sensorValue).c_str());
-			s_cDataUpdate &= ~ACC_UPDATE;
-		}
-		s_cDataUpdate = 0;
+		unsigned long currentMillis = millis();
+		unsigned long elapsedMillis = currentMillis - initialMillis;
+		unsigned long currentEpoch = initialEpoch + elapsedMillis / 1000;
+
+		// 시간 구조체 생성
+		tmElements_t tm;
+		breakTime(currentEpoch, tm);
+
+		// 밀리초 단위 계산
+		int milliseconds = elapsedMillis % 1000;
+
+		// 현재 시간 문자열로 변환
+		char time[30];
+		sprintf(time, "%04d_%02d_%02d-%02d_%02d_%02d.%03d",
+			tmYearToCalendar(tm.Year), tm.Month, tm.Day,
+			tm.Hour, tm.Minute, tm.Second, milliseconds);
+
+		JsonObject obj = data.createNestedObject();
+		obj["time"] = time;
+		JsonObject value = obj.createNestedObject("value");
+		value["x"] = fAcc[0];
+		value["y"] = fAcc[1];
+		value["z"] = fAcc[2];
+		
+		cnt += 1;
+
+		s_cDataUpdate &= ~ACC_UPDATE;
 	}
-}
-void CopeCmdData(unsigned char ucData)
-{
-	static unsigned char s_ucData[50], s_ucRxCnt = 0;
-	
-	s_ucData[s_ucRxCnt++] = ucData;
-	if(s_ucRxCnt<3) return;
-	if(s_ucRxCnt >= 50) s_ucRxCnt = 0;
-	if(s_ucRxCnt >= 3)
-	{
-		if((s_ucData[1] == '\r') && (s_ucData[2] == '\n'))
-		{
-			s_cCmd = s_ucData[0];
-			memset(s_ucData,0,50);
-			s_ucRxCnt = 0;
-		}
-		else 
-		{
-			s_ucData[0] = s_ucData[1];
-			s_ucData[1] = s_ucData[2];
-			s_ucRxCnt = 2;
-			
-		}
+	s_cDataUpdate = 0;
+	if (cnt == 50){
+		// JSON 데이터 직렬화
+		char jsonString[5000];
+		serializeJson(doc, jsonString);
+
+		// JSON 데이터 MQTT로 전송
+		client.publish(str(sensorValue).c_str(), (const char*)jsonString);
+
+		// JSON 초기화
+		doc.clear();
+		data = doc.createNestedArray("data");
+		cnt = 0;
 	}
 }
 static void SensorUartSend(uint8_t *p_data, uint32_t uiSize)
@@ -169,24 +176,10 @@ static void SensorDataUpdata(uint32_t uiReg, uint32_t uiRegNum)
 	int i;
     for(i = 0; i < uiRegNum; i++)
     {
-        switch(uiReg)
-        {
-            case AZ:
-				s_cDataUpdate |= ACC_UPDATE;
-            break;
-            case GZ:
-				s_cDataUpdate |= GYRO_UPDATE;
-            break;
-            case HZ:
-				s_cDataUpdate |= MAG_UPDATE;
-            break;
-            case Yaw:
-				s_cDataUpdate |= ANGLE_UPDATE;
-            break;
-            default:
-				s_cDataUpdate |= READ_UPDATE;
+		if(uiReg == AZ){
+			s_cDataUpdate |= ACC_UPDATE;
 			break;
-        }
+		}
 		uiReg++;
     }
 }
@@ -240,22 +233,11 @@ void setup_wifi() {
   Serial.println(WiFi.localIP());
 }
 
-void callback(const char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
-  }
-  Serial.println();
-  client.unsubscribe(str("Confirm").c_str());
-}
-
-void reconnect() {
+void reconnect(String clientId) {
   while (!client.connected()) {
     if (client.connect(clientId.c_str())) {
-		value = str("Register").c_str();
-		client.publish(value, check);
+		topic = str("Register").c_str();
+		client.publish(topic, check);
     } 
 	else {
 		Serial.println("1분 대기");
@@ -264,46 +246,23 @@ void reconnect() {
   }
 }
 
-int connect_first() {
+int connect_first(String clientId) {
 	int result = 0;
 	if (client.connect(clientId.c_str())) {
-		value = str("Confirm").c_str();
-		client.subscribe(value, 1);
+		topic = str("Confirm").c_str();
+		client.subscribe(topic, 1);
 		
-		value = str("Register").c_str();
-		client.publish(value, check);
+		topic = str("Register").c_str();
+		client.publish(topic, check);
 
 		result = 1;
 	}
 	return result;
 }
 
-string str(const char* rc){
-	string rcstr = "ICCMS/";
-	rcstr += location;
-	rcstr += "/";
-	rcstr += subLocation;
-	rcstr += "/";
-	rcstr += part;
-	rcstr += "/";
-	rcstr += sensorType;
-	rcstr += "/";
-	rcstr += String(sensorIndex).c_str();
-	rcstr += "/";
-	rcstr += rc;
-	return rcstr;
-}
+String str(const char* rc){
+	char rcstr[50];
+	sprintf(rcstr, "ICCMS/%s/%s/%s/%s/%d/%s", location, subLocation, part, sensorType, sensorIndex, rc);
 
-string timeset(char ch[3][10]){
-	time_t timer;
-	struct tm* t;
-	time(&timer);
-	t = localtime(&timer);
-	string rcstr = "";
-	rcstr += ch[0];
-	rcstr += "_";
-	rcstr += ch[1];
-	rcstr += "_";
-	rcstr += ch[2];
-	return rcstr;
+	return String(rcstr);
 }
