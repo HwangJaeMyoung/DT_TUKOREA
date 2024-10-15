@@ -12,6 +12,10 @@
         "utility": "cpp",
         "random": "cpp",
         "string_view": "cpp",
-        "string": "cpp"
+        "string": "cpp",
+        "sstream": "cpp",
+        "xstring": "cpp",
+        "chrono": "cpp",
+        "ratio": "cpp"
     }
 }
