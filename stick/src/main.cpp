@@ -108,11 +108,6 @@ void loop() {
 			}
 		}
 	}
-	
-	if (espClient.read() != -1) {
-		Serial.println("Connected");
-		espClient.write("Connected\n");
-	}
 
 	webserver.handleClient();
 
@@ -120,6 +115,7 @@ void loop() {
 
 	// disconnect인 경우 reconnect 반복
 	if (!client.connected()) {
+		rec_cnt += 1;
 		Serial.println((String) checkTime() + ": " + rec_cnt + "times reconnect in loop now");
 		reconnect(clientId);
 	}
